@@ -21,7 +21,7 @@ module text_screen_gen(
     input wire reset,
     input wire video_off,
     input wire [11:0] gamepad_in,
-    input wire [9:0] x, 
+    input wire [9:0] x,
     input wire [9:0] y,
     output reg [5:0] rgb
     );
@@ -39,7 +39,7 @@ module text_screen_gen(
     wire we;                    // write enable
     wire we2;                    // write enable
     wire [11:0] addr_r, addr_w;
-    wire [11:0] addr_r2;
+    wire [11:0] addr_r2, addr_w2;
     wire [6:0] din, dout;
     wire [5:0] din2, dout2;
     // 80-by-30 tile map
@@ -52,7 +52,7 @@ module text_screen_gen(
     reg [4:0] cur_y_reg;
     wire [4:0] cur_y_next;
     wire move_xl_tick, move_yu_tick, move_xr_tick, move_yd_tick, cursor_on;
-
+    reg [31:0] delay_color;
 
     // delayed pixel count by 2clk
     reg [9:0] pix_x1_reg, pix_y1_reg;
@@ -74,8 +74,8 @@ module text_screen_gen(
     dp_ram(.clk(clk),.reset(),.dat_in(din),.wr_adr(addr_w),.wr_en(we),.dat_out(dout),.rd_adr(addr_r));
 
     simpledpmem #(.DATA_SIZE(6), .ADDR_SIZE(12)) 
-    dp_ram2(.clk(clk),.reset(),.dat_in(din2),.wr_adr(addr_w),.wr_en(we2),.dat_out(dout2),.rd_adr(addr_r2));
-    
+    dp_ram2(.clk(clk),.reset(),.dat_in(din2),.wr_adr(addr_w2),.wr_en(we2),.dat_out(dout2),.rd_adr(addr_r2));
+     
     // registers
     always @(posedge clk or posedge reset)
         if(reset) begin
@@ -85,6 +85,7 @@ module text_screen_gen(
             pix_x2_reg <= 0;
             pix_y1_reg <= 0;
             pix_y2_reg <= 0;
+            delay_color <= 0;
         end    
         else begin
             cur_x_reg <= cur_x_next;
@@ -93,6 +94,11 @@ module text_screen_gen(
             pix_x2_reg <= pix_x1_reg;
             pix_y1_reg <= y;
             pix_y2_reg <= pix_y1_reg;
+            // update state
+            if (delay_color == 0) begin
+              delay_color <= 640*480*100;
+            end
+            else delay_color <= delay_color - 1;
         end
 		
 
@@ -101,8 +107,13 @@ module text_screen_gen(
     assign we = gamepad_in[11];
     assign din = 7'd1;
 
-    assign we2 = gamepad_in[3]; // a
-    assign din2 = 6'b111111;
+    assign addr_w2 = (gamepad_in[3]) ? {cur_y_reg, cur_x_reg} : {y[8:4], x[9:3]};
+    assign we2 = gamepad_in[3] | (delay_color < 640*480 && x[2:0]==6 && y[3:0] == 1
+                                  && pix_x1_reg[9:3]==x[9:3] && pix_y1_reg[8:4]==y[8:4]);
+    // assign din2 = 6'b111111;
+    assign din2 = (dout2 == 6'b000000 || dout2 == 6'b110000) ? 6'b000011:
+                  (dout2 == 6'b000011) ? 6'b001100:
+                  (dout2 == 6'b001100) ? 6'b110000: 6'b111111;
 
     // tile RAM read
     // use nondelayed coordinates to form tile RAM address
@@ -137,7 +148,7 @@ module text_screen_gen(
                        (pix_x2_reg[9:3] == cur_x_reg);
 
     // rgb multiplexing circuit
-    always @(*)
+    always @(*) begin
         if(video_off)
             rgb = 6'b0;     // blank
         else
@@ -145,5 +156,5 @@ module text_screen_gen(
                 rgb = text_rev_rgb;
             else
                 rgb = text_rgb;
-      
+    end
 endmodule
