@@ -37,8 +37,11 @@ module text_screen_gen(
 
     // tile RAM
     wire we;                    // write enable
+    wire we2;                    // write enable
     wire [11:0] addr_r, addr_w;
+    wire [11:0] addr_r2;
     wire [6:0] din, dout;
+    wire [5:0] din2, dout2;
     // 80-by-30 tile map
     parameter MAX_X = 80;   // 640 pixels / 8 data bits = 80
     parameter MAX_Y = 30;   // 480 pixels / 16 data rows = 30
@@ -69,6 +72,9 @@ module text_screen_gen(
     // instantiate dual-port video RAM (2^12-by-7), 2% of BRAM on Basys3
 	simpledpmem #(.DATA_SIZE(7), .ADDR_SIZE(12)) 
     dp_ram(.clk(clk),.reset(),.dat_in(din),.wr_adr(addr_w),.wr_en(we),.dat_out(dout),.rd_adr(addr_r));
+
+    simpledpmem #(.DATA_SIZE(6), .ADDR_SIZE(12)) 
+    dp_ram2(.clk(clk),.reset(),.dat_in(din2),.wr_adr(addr_w),.wr_en(we2),.dat_out(dout2),.rd_adr(addr_r2));
     
     // registers
     always @(posedge clk or posedge reset)
@@ -95,9 +101,13 @@ module text_screen_gen(
     assign we = gamepad_in[11];
     assign din = 7'd1;
 
+    assign we2 = gamepad_in[3]; // a
+    assign din2 = 6'b111111;
+
     // tile RAM read
     // use nondelayed coordinates to form tile RAM address
     assign addr_r = {y[8:4], x[9:3]};
+    assign addr_r2 = {pix_y1_reg[8:4], pix_x1_reg[9:3]};
     assign char_addr = dout;
     // font ROM
     assign row_addr = y[3:0];
@@ -119,8 +129,9 @@ module text_screen_gen(
     
     // object signals
     // green over black and reversed video for cursor
-    assign text_rgb = (ascii_bit) ? 6'b001100 : 6'b0;
-    assign text_rev_rgb = (ascii_bit) ? 6'b0 : 6'b001100;
+    
+    assign text_rgb = (ascii_bit) ? ((dout2!=0) ? dout2 : 6'b001100) : 6'b0;
+    assign text_rev_rgb = (ascii_bit) ? 6'b0 : ((dout2!=0) ? dout2 : 6'b001100);
     // use delayed coordinates for comparison
     assign cursor_on = (pix_y2_reg[8:4] == cur_y_reg) &&
                        (pix_x2_reg[9:3] == cur_x_reg);
